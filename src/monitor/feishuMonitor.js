@@ -16,6 +16,11 @@ class FeishuMonitor {
             'WWG-活跃合约-姆少聚合'
         ];
         this.targetAuthors = ['woods', 'eli']; // 只处理这些作者的消息
+        this.messageStats = {
+            total: 0,
+            filtered: 0,
+            byAuthor: {}
+        };
     }
 
     // 延迟方法，替代已废弃的 waitForTimeout
@@ -654,15 +659,37 @@ class FeishuMonitor {
     shouldProcessMessage(message) {
         const content = message.content || '';
         
+        logger.debug(`🔍 检查消息内容: "${content.substring(0, 150)}..."`);
+        logger.debug(`🎯 目标作者列表: [${this.targetAuthors.join(', ')}]`);
+        
         // 检查消息内容是否包含目标作者
         for (const author of this.targetAuthors) {
-            if (content.toLowerCase().includes(author.toLowerCase())) {
-                logger.debug(`消息包含目标作者: ${author}`);
+            const authorLower = author.toLowerCase();
+            const contentLower = content.toLowerCase();
+            
+            logger.debug(`🔍 检查是否包含 "${author}": ${contentLower.includes(authorLower) ? '✅ 是' : '❌ 否'}`);
+            
+            if (contentLower.includes(authorLower)) {
+                logger.info(`✅ 消息包含目标作者: ${author}`);
                 return true;
             }
         }
         
+        logger.debug(`❌ 消息不包含任何目标作者`);
         return false;
+    }
+
+    // 检测消息中的作者
+    detectAuthor(content) {
+        const contentLower = content.toLowerCase();
+        
+        for (const author of this.targetAuthors) {
+            if (contentLower.includes(author.toLowerCase())) {
+                return author;
+            }
+        }
+        
+        return null;
     }
 
     async monitorLoop() {
@@ -757,13 +784,34 @@ class FeishuMonitor {
                             message.groupName = groupName;
                             message.source = 'multi-tab';
                             
+                            // 统计总消息数
+                            this.messageStats.total++;
+                            
+                            // 详细日志：显示每条接收到的消息
+                            logger.info(`📥 [${groupName}] 接收到消息 #${this.messageStats.total}: ${message.content.substring(0, 100)}...`);
+                            
                             // 过滤消息：只处理包含目标作者的消息
-                            if (this.shouldProcessMessage(message)) {
+                            const shouldProcess = this.shouldProcessMessage(message);
+                            logger.info(`🔍 [${groupName}] 消息过滤结果: ${shouldProcess ? '✅ 通过' : '❌ 被过滤'}`);
+                            
+                            if (shouldProcess) {
+                                this.messageStats.filtered++;
+                                
+                                // 统计作者消息数
+                                const detectedAuthor = this.detectAuthor(message.content);
+                                if (detectedAuthor) {
+                                    this.messageStats.byAuthor[detectedAuthor] = (this.messageStats.byAuthor[detectedAuthor] || 0) + 1;
+                                }
+                                
+                                logger.info(`📨 [${groupName}] 处理过滤后的消息 (作者: ${detectedAuthor}): ${message.content.substring(0, 80)}...`);
+                                logger.info(`📊 统计: 总消息 ${this.messageStats.total}, 过滤后 ${this.messageStats.filtered}, 作者分布: ${JSON.stringify(this.messageStats.byAuthor)}`);
+                                
                                 if (this.messageCallback) {
                                     await this.messageCallback(message);
                                 }
                             } else {
-                                logger.debug(`[${groupName}] 消息被过滤: 不包含目标作者 (${this.targetAuthors.join(', ')})`);
+                                logger.info(`🚫 [${groupName}] 消息被过滤原因: 不包含目标作者 (${this.targetAuthors.join(', ')})`);
+                                logger.debug(`🔍 [${groupName}] 消息内容: ${message.content}`);
                             }
                         }
                         

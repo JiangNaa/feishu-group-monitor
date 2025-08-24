@@ -50,10 +50,14 @@ class Logger {
     }
 
     debug(message) {
-        if (process.env.LOG_LEVEL === 'debug') {
-            console.log(`🐛 ${message}`);
-            this.writeToFile('debug', message);
-        }
+        // 临时启用debug日志以便调试
+        console.log(`🐛 ${message}`);
+        this.writeToFile('debug', message);
+    }
+
+    verbose(message) {
+        console.log(`📝 ${message}`);
+        this.writeToFile('verbose', message);
     }
 }
 

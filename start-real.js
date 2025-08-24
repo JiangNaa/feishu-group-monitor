@@ -102,6 +102,11 @@ class RealFeishuBot {
             const shortGroup = message.groupName?.includes('现货') ? '现货' : message.groupName?.includes('合约') ? '合约' : 'Unknown';
             
             logger.info(`📨 ${groupInfo}收到过滤后的消息: ${message.content.substring(0, 80)}...`);
+            
+            // 详细分析消息内容
+            logger.debug(`📋 ${groupInfo}完整消息内容: ${message.content}`);
+            logger.debug(`👤 ${groupInfo}消息作者: ${message.author}`);
+            logger.debug(`⏰ ${groupInfo}消息时间: ${message.timestamp}`);
 
             // 解析消息中的交易信号
             const signal = this.parser.parseMessage(message);

@@ -1,0 +1,401 @@
+[1mdiff --git a/debug-group-finder.js b/debug-group-finder.js[m
+[1mnew file mode 100644[m
+[1mindex 0000000..0519ecb[m
+[1m--- /dev/null[m
+[1m+++ b/debug-group-finder.js[m
+[36m@@ -0,0 +1 @@[m
+[32m+[m[41m [m
+\ No newline at end of file[m
+[1mdiff --git a/get-group-messages.js b/get-group-messages.js[m
+[1mnew file mode 100644[m
+[1mindex 0000000..0519ecb[m
+[1m--- /dev/null[m
+[1m+++ b/get-group-messages.js[m
+[36m@@ -0,0 +1 @@[m
+[32m+[m[41m [m
+\ No newline at end of file[m
+[1mdiff --git a/src/monitor/feishuMonitor.js b/src/monitor/feishuMonitor.js[m
+[1mindex 4689e6d..784331b 100644[m
+[1m--- a/src/monitor/feishuMonitor.js[m
+[1m+++ b/src/monitor/feishuMonitor.js[m
+[36m@@ -6,9 +6,21 @@[m [mclass FeishuMonitor {[m
+         this.config = config;[m
+         this.browser = null;[m
+         this.page = null;[m
+[32m+[m[32m        this.pages = {}; // 存储多个页面[m
+         this.isMonitoring = false;[m
+         this.lastMessageCount = 0;[m
+[32m+[m[32m        this.lastMessageCounts = {}; // 每个群组的消息计数[m
+         this.messageCallback = null;[m
+[32m+[m[32m        this.targetGroups = [[m
+[32m+[m[32m            'wwg-活跃现货-姆少聚合',[m
+[32m+[m[32m            'WWG-活跃合约-姆少聚合'[m
+[32m+[m[32m        ];[m
+[32m+[m[32m        this.targetAuthors = ['woods', 'eli']; // 只处理这些作者的消息[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    // 延迟方法，替代已废弃的 waitForTimeout[m
+[32m+[m[32m    async delay(ms) {[m
+[32m+[m[32m        return new Promise(resolve => setTimeout(resolve, ms));[m
+     }[m
+ [m
+     async init() {[m
+[36m@@ -16,7 +28,7 @@[m [mclass FeishuMonitor {[m
+             logger.info('正在初始化Puppeteer浏览器...');[m
+             [m
+             this.browser = await puppeteer.launch({[m
+[31m-                headless: this.config.headless || true,[m
+[32m+[m[32m                headless: this.config.headless || false,[m
+                 args: [[m
+                     '--no-sandbox',[m
+                     '--disable-setuid-sandbox',[m
+[36m@@ -24,8 +36,14 @@[m [mclass FeishuMonitor {[m
+                     '--disable-accelerated-2d-canvas',[m
+                     '--no-first-run',[m
+                     '--no-zygote',[m
+[31m-                    '--disable-gpu'[m
+[31m-                ][m
+[32m+[m[32m                    '--disable-gpu',[m
+[32m+[m[32m                    '--disable-web-security',[m
+[32m+[m[32m                    '--disable-features=VizDisplayCompositor',[m
+[32m+[m[32m                    '--disable-blink-features=AutomationControlled'[m
+[32m+[m[32m                ],[m
+[32m+[m[32m                defaultViewport: null,[m
+[32m+[m[32m                ignoreDefaultArgs: ['--enable-automation'],[m
+[32m+[m[32m                executablePath: undefined // 使用系统默认Chrome[m
+             });[m
+ [m
+             this.page = await this.browser.newPage();[m
+[36m@@ -49,33 +67,39 @@[m [mclass FeishuMonitor {[m
+             logger.info('正在登录飞书...');[m
+             [m
+             // 导航到飞书登录页面[m
+[32m+[m[32m            logger.info('正在打开飞书网页版...');[m
+             await this.page.goto('https://www.feishu.cn/messenger/', { [m
+                 waitUntil: 'networkidle2',[m
+[31m-                timeout: 30000 [m
+[32m+[m[32m                timeout: 60000[m[41m [m
+             });[m
+ [m
+             // 等待登录页面加载[m
+[31m-            await this.page.waitForTimeout(3000);[m
+[32m+[m[32m            logger.info('等待页面加载完成...');[m
+[32m+[m[32m            await this.delay(5000);[m
+ [m
+             // 检查是否已经登录[m
+             const isLoggedIn = await this.checkLoginStatus();[m
+             if (isLoggedIn) {[m
+[31m-                logger.success('已经登录飞书');[m
+[32m+[m[32m                logger.success('检测到已登录状态');[m
+                 return true;[m
+             }[m
+ [m
+[31m-            // 如果没有提供用户名密码，等待手动登录[m
+[31m-            if (!this.config.username || !this.config.password) {[m
+[31m-                logger.warn('未提供登录凭据，请手动登录');[m
+[31m-                logger.info('请在浏览器中手动完成登录，然后系统会自动继续...');[m
+[31m-                [m
+[31m-                // 等待用户手动登录[m
+[31m-                await this.waitForManualLogin();[m
+[31m-            }[m
+[32m+[m[32m            // 提示用户手动登录[m
+[32m+[m[32m            logger.info('🔐 请在打开的浏览器窗口中完成以下操作：');[m
+[32m+[m[32m            logger.info('   1. 选择登录方式（手机号/邮箱/扫码等）');[m
+[32m+[m[32m            logger.info('   2. 输入登录凭据');[m
+[32m+[m[32m            logger.info('   3. 完成验证（如短信验证码、二维码扫描等）');[m
+[32m+[m[32m            logger.info('   4. 等待系统自动检测登录成功');[m
+[32m+[m[32m            logger.info('');[m
+[32m+[m[32m            logger.info('⏳ 系统正在等待您完成登录...');[m
+[32m+[m[41m            [m
+[32m+[m[32m            // 等待用户手动登录[m
+[32m+[m[32m            await this.waitForManualLogin();[m
+ [m
+             return true;[m
+         } catch (error) {[m
+[31m-            logger.error(`登录失败: ${error.message}`);[m
+[32m+[m[32m            logger.error(`登录过程出错: ${error.message}`);[m
+[32m+[m[32m            logger.error('请检查网络连接或稍后重试');[m
+             return false;[m
+         }[m
+     }[m
+[36m@@ -86,39 +110,77 @@[m [mclass FeishuMonitor {[m
+             const loginIndicators = [[m
+                 '[data-testid="messenger-sidebar"]',[m
+                 '.messenger-sidebar',[m
+[31m-                '[class*="sidebar"]'[m
+[32m+[m[32m                '[class*="sidebar"]',[m
+[32m+[m[32m                '[class*="conversation"]',[m
+[32m+[m[32m                '[class*="chat-list"]',[m
+[32m+[m[32m                '.lark-spin-container',[m
+[32m+[m[32m                '[data-testid="chat-list"]'[m
+             ];[m
+ [m
+             for (const selector of loginIndicators) {[m
+                 try {[m
+[31m-                    await this.page.waitForSelector(selector, { timeout: 5000 });[m
+[32m+[m[32m                    await this.page.waitForSelector(selector, { timeout: 3000 });[m
+[32m+[m[32m                    logger.debug(`检测到登录指示器: ${selector}`);[m
+                     return true;[m
+                 } catch (e) {[m
+                     continue;[m
+                 }[m
+             }[m
+[32m+[m
+[32m+[m[32m            // 检查URL是否包含登录后的特征[m
+[32m+[m[32m            const currentUrl = this.page.url();[m
+[32m+[m[32m            if (currentUrl.includes('/messenger') && !currentUrl.includes('/login')) {[m
+[32m+[m[32m                logger.debug('URL显示已登录状态');[m
+[32m+[m[32m                return true;[m
+[32m+[m[32m            }[m
+[32m+[m
+             return false;[m
+         } catch (error) {[m
+[32m+[m[32m            logger.debug(`登录状态检测出错: ${error.message}`);[m
+             return false;[m
+         }[m
+     }[m
+ [m
+     async waitForManualLogin() {[m
+         return new Promise((resolve) => {[m
+[32m+[m[32m            let attempts = 0;[m
+[32m+[m[32m            const maxAttempts = 300; // 最多等待10分钟 (300 * 2秒)[m
+[32m+[m[41m            [m
+             const checkLogin = async () => {[m
+[31m-                const isLoggedIn = await this.checkLoginStatus();[m
+[31m-                if (isLoggedIn) {[m
+[31m-                    logger.success('检测到登录成功');[m
+[31m-                    resolve();[m
+[31m-                } else {[m
+[32m+[m[32m                attempts++;[m
+[32m+[m[41m                [m
+[32m+[m[32m                try {[m
+[32m+[m[32m                    const isLoggedIn = await this.checkLoginStatus();[m
+[32m+[m[32m                    if (isLoggedIn) {[m
+[32m+[m[32m                        logger.success('✅ 检测到登录成功！');[m
+[32m+[m[32m                        resolve();[m
+[32m+[m[32m                        return;[m
+[32m+[m[32m                    }[m
+[32m+[m
+[32m+[m[32m                    // 每30秒提示一次[m
+[32m+[m[32m                    if (attempts % 15 === 0) {[m
+[32m+[m[32m                        const minutes = Math.floor(attempts * 2 / 60);[m
+[32m+[m[32m                        logger.info(`⏳ 已等待 ${minutes} 分钟，请继续在浏览器中完成登录...`);[m
+[32m+[m[32m                    }[m
+[32m+[m
+[32m+[m[32m                    if (attempts >= maxAttempts) {[m
+[32m+[m[32m                        logger.error('❌ 登录等待超时，请重新启动程序');[m
+[32m+[m[32m                        resolve();[m
+[32m+[m[32m                        return;[m
+[32m+[m[32m                    }[m
+[32m+[m
+[32m+[m[32m                    setTimeout(checkLogin, 2000);[m
+[32m+[m[32m                } catch (error) {[m
+[32m+[m[32m                    logger.debug(`登录检测出错: ${error.message}`);[m
+                     setTimeout(checkLogin, 2000);[m
+                 }[m
+             };[m
+[32m+[m[41m            [m
+             checkLogin();[m
+         });[m
+     }[m
+ [m
+[31m-    async navigateToGroup() {[m
+[32m+[m[32m    async navigateToGroup(groupName = null) {[m
+         try {[m
+             logger.info('正在导航到指定群组...');[m
+             [m
+[36m@@ -127,10 +189,16 @@[m [mclass FeishuMonitor {[m
+                     waitUntil: 'networkidle2',[m
+                     timeout: 30000 [m
+                 });[m
+[32m+[m[32m            } else if (groupName) {[m
+[32m+[m[32m                // 查找并导航到指定群组[m
+[32m+[m[32m                const found = await this.findAndClickGroup(groupName);[m
+[32m+[m[32m                if (!found) {[m
+[32m+[m[32m                    throw new Error(`未找到群组: ${groupName}`);[m
+[32m+[m[32m                }[m
+             }[m
+ [m
+             // 等待群组页面加载[m
+[31m-            await this.page.waitForTimeout(3000);[m
+[32m+[m[32m            await this.delay(3000);[m
+             [m
+             logger.success('成功导航到群组页面');[m
+             return true;[m
+[36m@@ -140,6 +208,300 @@[m [mclass FeishuMonitor {[m
+         }[m
+     }[m
+ [m
+[32m+[m[32m    async findAndClickGroup(groupName) {[m
+[32m+[m[32m        try {[m
+[32m+[m[32m            logger.info(`正在查找群组: ${groupName}`);[m
+[32m+[m[41m            [m
+[32m+[m[32m            // 等待侧边栏加载[m
+[32m+[m[32m            await this.delay(2000);[m
+[32m+[m[41m            [m
+[32m+[m[32m            // 尝试多种可能的群组列表选择器[m
+[32m+[m[32m            const groupListSelectors = [[m
+[32m+[m[32m                '[class*="chat-list"]',[m
+[32m+[m[32m                '[class*="conversation-list"]',[m
+[32m+[m[32m                '[class*="sidebar"] [class*="list"]',[m
+[32m+[m[32m                '[data-testid="chat-list"]',[m
+[32m+[m[32m                '.lark-list',[m
+[32m+[m[32m                '[class*="group-list"]'[m
+[32m+[m[32m            ];[m
+[32m+[m[41m            [m
+[32m+[m[32m            let groupListElement = null;[m
+[32m+[m[32m            for (const selector of groupListSelectors) {[m
+[32m+[m[32m                try {[m
+[32m+[m[32m                    await this.page.waitForSelector(selector, { timeout: 3000 });[m
+[32m+[m[32m                    groupListElement = await this.page.$(selector);[m
+[32m+[m[32m                    if (groupListElement) {[m
+[32m+[m[32m                        logger.debug(`找到群组列表元素: ${selector}`);[m
+[32m+[m[32m                        break;[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                } catch (e) {[m
+[32m+[m[32m                    continue;[m
+[32m+[m[32m                }[m
+[32m+[m[32m            }[m
+[32m+[m[41m            [m
+[32m+[m[32m            if (!groupListElement) {[m
+[32m+[m[32m                logger.warn('未找到群组列表，尝试搜索功能');[m
+[32m+[m[32m                return await this.searchGroup(groupName);[m
+[32m+[m[32m            }[m
+[32m+[m[41m            [m
+[32m+[m[32m            // 查找包含指定名称的群组[m
+[32m+[m[32m            const groupSelectors = [[m
+[32m+[m[32m                `[title*="${groupName}"]`,[m
+[32m+[m[32m                `[aria-label*="${groupName}"]`,[m
+[32m+[m[32m                `*:contains("${groupName}")`,[m
+[32m+[m[32m                `[class*="conversation-item"]:contains("${groupName}")`,[m
+[32m+[m[32m                `[class*="chat-item"]:contains("${groupName}")`[m
+[32m+[m[32m            ];[m
+[32m+[m[41m            [m
+[32m+[m[32m            for (const selector of groupSelectors) {[m
+[32m+[m[32m                try {[m
+[32m+[m[32m                    const groupElement = await this.page.$(selector);[m
+[32m+[m[32m                    if (groupElement) {[m
+[32m+[m[32m                        logger.success(`找到群组: ${groupName}`);[m
+[32m+[m[32m                        await groupElement.click();[m
+[32m+[m[32m                        await this.delay(2000);[m
+[32m+[m[32m                        return true;[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                } catch (e) {[m
+[32m+[m[32m                    continue;[m
+[32m+[m[32m                }[m
+[32m+[m[32m            }[m
+[32m+[m[41m            [m
+[32m+[m[32m            // 如果直接选择器没找到，尝试遍历所有群组项[m
+[32m+[m[32m            return await this.findGroupByText(groupName);[m
+[32m+[m[41m            [m
+[32m+[m[32m        } catch (error) {[m
+[32m+[m[32m            logger.error(`查找群组失败: ${error.message}`);[m
+[32m+[m[32m            return false;[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }[m
+[32m+[m[41m    [m
+[32m+[m[32m    async searchGroup(groupName) {[m
+[32m+[m[32m        try {[m
+[32m+[m[32m            logger.info('尝试使用搜索功能查找群组...');[m
+[32m+[m[41m            [m
+[32m+[m[32m            // 查找搜索框[m
+[32m+[m[32m            const searchSelectors = [[m
+[32m+[m[32m                'input[placeholder*="搜索"]',[m
+[32m+[m[32m                'input[placeholder*="search"]',[m
+[32m+[m[32m                '[class*="search"] input',[m
+[32m+[m[32m                '[data-testid="search-input"]'[m
+[32m+[m[32m            ];[m
+[32m+[m[41m            [m
+[32m+[m[32m            for (const selector of searchSelectors) {[m
+[32m+[m[32m                try {[m
+[32m+[m[32m                    const searchBox = await this.page.$(selector);[m
+[32m+[m[32m                    if (searchBox) {[m
+[32m+[m[32m                        await searchBox.click();[m
+[32m+[m[32m                        await searchBox.type(groupName);[m
+[32m+[m[32m                        await this.page.keyboard.press('Enter');[m
+[32m+[m[32m                        await this.delay(2000);[m
+[32m+[m[41m                        [m
+[32m+[m[32m                        // 点击搜索结果中的群组[m
+[32m+[m[32m                        const resultSelectors = [[m
+[32m+[m[32m                            `[class*="search-result"]:contains("${groupName}")`,[m
+[32m+[m[32m                            `[class*="result-item"]:contains("${groupName}")`[m
+[32m+[m[32m                        ];[m
+[32m+[m[41m                        [m
+[32m+[m[32m                        for (const resultSelector of resultSelectors) {[m
+[32m+[m[32m                            try {[m
+[32m+[m[32m                                const result = await this.page.$(resultSelector);[m
+[32m+[m[32m                                if (result) {[m
+[32m+[m[32m                                    await result.click();[m
+[32m+[m[32m                                    await this.delay(2000);[m
+[32m+[m[32m                                    return true;[m
+[32m+[m[32m                                }[m
+[32m+[m[32m                            } catch (e) {[m
+[32m+[m[32m                                continue;[m
+[32m+[m[32m                            }[m
+[32m+[m[32m                        }[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                } catch (e) {[m
+[32m+[m[32m                    continue;[m
+[32m+[m[32m                }[m
+[32m+[m[32m            }[m
+[32m+[m[41m            [m
+[32m+[m[32m            return false;[m
+[32m+[m[32m        } catch (error) {[m
+[32m+[m[32m            logger.error(`搜索群组失败: ${error.message}`);[m
+[32m+[m[32m            return false;[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }[m
+[32m+[m[41m    [m
+[32m+[m[32m    async findGroupByText(groupName) {[m
+[32m+[m[32m        try {[m
+[32m+[m[32m            logger.info('遍历群组列表查找目标群组...');[m
+[32m+[m[41m            [m
+[32m+[m[32m            // 使用页面评估来查找包含指定文本的元素[m
+[32m+[m[32m            const found = await this.page.evaluate((targetName) => {[m
+[32m+[m[32m                // 查找所有可能包含群组名称的元素[m
+[32m+[m[32m                const elements = document.querySelectorAll('*');[m
+[32m+[m[41m                [m
+[32m+[m[32m                for (let element of elements) {[m
+[32m+[m[32m                    if (element.textContent && element.textContent.includes(targetName)) {[m
+[32m+[m[32m                        // 检查是否是可点击的群组项[m
+[32m+[m[32m                        const isClickable = element.onclick ||[m[41m [m
+[32m+[m[32m                                          element.getAttribute('role') === 'button' ||[m
+[32m+[m[32m                                          element.tagName === 'BUTTON' ||[m
+[32m+[m[32m                                          element.classList.contains('clickable') ||[m
+[32m+[m[32m                                          element.closest('[class*="conversation"]') ||[m
+[32m+[m[32m                                          element.closest('[class*="chat-item"]');[m
+[32m+[m[41m                        [m
+[32m+[m[32m                        if (isClickable || element.closest('[class*="list-item"]')) {[m
+[32m+[m[32m                            element.click();[m
+[32m+[m[32m                            return true;[m
+[32m+[m[32m                        }[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                }[m
+[32m+[m[32m                return false;[m
+[32m+[m[32m            }, groupName);[m
+[32m+[m[41m            [m
+[32m+[m[32m            if (found) {[m
+[32m+[m[32m                logger.success(`通过文本匹配找到并点击了群组: ${groupName}`);[m
+[32m+[m[32m                await this.delay(2000);[m
+[32m+[m[32m                return true;[m
+[32m+[m[32m            }[m
+[32m+[m[41m            [m
+[32m+[m[32m            return false;[m
+[32m+[m[32m        } catch (error) {[m
+[32m+[m[32m            logger.error(`遍历查找群组失败: ${error.message}`);[m
+[32m+[m[32m            return false;[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    async getRecentMessages(count = 10) {[m
+[32m+[m[32m        try {[m
+[32m+[m[32m            logger.info(`正在获取最近 ${count} 条消息...`);[m
+[32m+[m[41m            [m
+[32m+[m[32m            // 等待消息区域加载[m
+[32m+[m[32m            await this.delay(3000);[m
+[32m+[m[41m            [m
+[32m+[m[32m            // 尝试多种可能的消息容器选择器[m
+[32m+[m[32m            const messageContainerSelectors = [[m
+[32m+[m[32m                '[class*="message-list"]',[m
+[32m+[m[32m                '[class*="chat-content"]',[m
+[3
